@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
   Heart, ShoppingBag, Utensils, Zap, Car, Home, Film, Gift, 
-  Plus, Calendar, Trash2, Edit, MessageCircle, DollarSign, X, Check, Lock, LogIn, Upload, Wallet
+  Plus, Calendar, Trash2, Edit, MessageCircle, DollarSign, X, Check, Lock, LogIn, Upload, Wallet, Settings, LogOut
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ChartTooltip, Legend } from 'recharts';
 import confetti from "canvas-confetti";
@@ -10,7 +10,7 @@ import Papa from "papaparse";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, onSnapshot, query, orderBy, writeBatch } from "https://www.gstatic.com/firebasejs/11.2.0/firebase-firestore.js";
 
-// --- FIREBASE CONFIG (SAME AS LEANAXIS FOR NOW, CHANGE IF NEEDED) ---
+// --- FIREBASE CONFIG ---
 const firebaseConfig = {
     apiKey: "AIzaSyAOFOgjdbdoUYBTldXOEEG636q1EM8EBfc",
     authDomain: "leanaxis-accounts.firebaseapp.com",
@@ -60,16 +60,17 @@ function useStickyState(defaultValue, key) {
 }
 
 // --- LOGIN SCREEN ---
-const Login = ({ onLogin }) => {
+const Login = ({ onLogin, storedPin }) => {
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (pin === '1430') { // Example PIN: "I Love You" -> 143
+        if (pin === storedPin) { 
             onLogin();
         } else {
             setError('Wrong PIN, Honey! Try again ❤️');
+            setPin('');
         }
     };
 
@@ -103,7 +104,8 @@ const Login = ({ onLogin }) => {
 // --- APP COMPONENT ---
 function App() {
     const [isAuthenticated, setIsAuthenticated] = useStickyState(false, 'moonpie_auth');
-    const [view, setView] = useState('expenses'); // expenses, chat, goals
+    const [appPin, setAppPin] = useStickyState('1430', 'moonpie_pin'); // Default PIN
+    const [view, setView] = useState('expenses'); // expenses, notes, settings
     const [showAddModal, setShowAddModal] = useState(false);
     
     // Data
@@ -113,6 +115,7 @@ function App() {
     // Form State
     const [newExpense, setNewExpense] = useState({ amount: '', category: 'groceries', note: '', date: new Date().toISOString().split('T')[0], who: 'Me' });
     const [newNote, setNewNote] = useState('');
+    const [newPinCode, setNewPinCode] = useState('');
 
     // --- HANDLERS ---
     const handleAddExpense = async (e) => {
@@ -146,26 +149,36 @@ function App() {
             complete: async (results) => {
                 const rows = results.data;
                 if (rows.length === 0) return alert("File looks empty!");
-                if (!confirm(`Import ${rows.length} expenses from file?`)) return;
+                if (!confirm(`Import ${rows.length} rows?`)) return;
 
                 const batch = writeBatch(db);
                 let count = 0;
 
                 rows.forEach(row => {
-                    // Try to map common column names
-                    const amount = row['Amount'] || row['amount'] || row['Cost'] || row['cost'] || 0;
-                    const desc = row['Description'] || row['description'] || row['Note'] || row['note'] || 'Imported Expense';
-                    const date = row['Date'] || row['date'] || new Date().toISOString().split('T')[0];
-                    const cat = 'other'; // Default category for imports
+                    const cleanRow = {};
+                    Object.keys(row).forEach(k => cleanRow[k.trim().toLowerCase()] = row[k]);
 
-                    if (amount > 0) {
+                    const debitStr = cleanRow['debit'] || '0';
+                    const comment = cleanRow['comment'] || 'Imported';
+                    const dateStr = cleanRow['date & time'] || new Date().toISOString().split('T')[0];
+                    const debit = Number(debitStr.toString().replace(/,/g, ''));
+                    
+                    if (debit > 0) {
+                        let cat = 'other';
+                        const lowerComment = comment.toLowerCase();
+                        if (lowerComment.includes('lunch') || lowerComment.includes('dinner') || lowerComment.includes('coffee') || lowerComment.includes('bakery')) cat = 'dining';
+                        else if (lowerComment.includes('indrive') || lowerComment.includes('careem') || lowerComment.includes('uber')) cat = 'transport';
+                        else if (lowerComment.includes('load') || lowerComment.includes('bill')) cat = 'utilities';
+                        else if (lowerComment.includes('laser') || lowerComment.includes('gym') || lowerComment.includes('doctor')) cat = 'home';
+                        else if (lowerComment.includes('pocket money')) cat = 'gifts';
+
                         const newRef = doc(collection(db, 'moonpie_expenses'));
                         batch.set(newRef, {
-                            amount: Number(amount),
-                            note: desc,
-                            date: date,
+                            amount: debit,
+                            note: comment,
+                            date: new Date(dateStr).toISOString().split('T')[0],
                             category: cat,
-                            who: 'Partner', // Assume imported data is from partner/shared
+                            who: 'Partner',
                             createdAt: new Date().toISOString(),
                             imported: true
                         });
@@ -200,6 +213,17 @@ function App() {
         await deleteDoc(doc(db, 'moonpie_notes', id));
     };
 
+    const handleChangePin = (e) => {
+        e.preventDefault();
+        if (newPinCode.length === 4) {
+            setAppPin(newPinCode);
+            alert("PIN Updated Successfully! ❤️");
+            setNewPinCode('');
+        } else {
+            alert("PIN must be 4 digits!");
+        }
+    };
+
     // --- CALCULATIONS ---
     const totalSpent = useMemo(() => expenses.reduce((acc, curr) => acc + (curr.amount || 0), 0), [expenses]);
     
@@ -211,7 +235,7 @@ function App() {
         return Object.keys(map).map(k => ({ name: CATEGORIES.find(c => c.id === k)?.label || k, value: map[k] }));
     }, [expenses]);
 
-    if (!isAuthenticated) return <Login onLogin={() => setIsAuthenticated(true)} />;
+    if (!isAuthenticated) return <Login onLogin={() => setIsAuthenticated(true)} storedPin={appPin} />;
 
     return (
         <div className="max-w-md mx-auto min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 pb-20 relative overflow-hidden">
@@ -325,25 +349,62 @@ function App() {
                         </div>
                     </div>
                 )}
+
+                {view === 'settings' && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                        <div className="bg-white/80 backdrop-blur rounded-2xl p-6 shadow-sm border border-white">
+                            <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Lock size={18}/> Security</h2>
+                            <form onSubmit={handleChangePin} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Change PIN</label>
+                                    <div className="flex gap-2">
+                                        <input 
+                                            type="password" 
+                                            maxLength="4"
+                                            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-center text-lg font-bold tracking-widest outline-none focus:border-pink-500"
+                                            placeholder="••••"
+                                            value={newPinCode}
+                                            onChange={e => setNewPinCode(e.target.value)}
+                                        />
+                                        <button type="submit" className="bg-pink-500 text-white px-4 rounded-xl font-bold hover:bg-pink-600 transition-colors">
+                                            Update
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-2">Current PIN: <span className="font-mono bg-slate-100 px-1 rounded">{appPin}</span></p>
+                                </div>
+                            </form>
+                        </div>
+
+                        <button onClick={() => setIsAuthenticated(false)} className="w-full bg-red-100 text-red-600 font-bold py-3 rounded-xl hover:bg-red-200 transition-colors flex items-center justify-center gap-2">
+                            <LogOut size={18} /> Logout
+                        </button>
+                    </div>
+                )}
             </main>
 
-            {/* FLOATING ADD BUTTON */}
-            <button 
-                onClick={() => setShowAddModal(true)}
-                className="fixed bottom-24 right-6 bg-slate-900 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-50 border-4 border-white"
-            >
-                <Plus size={28} />
-            </button>
+            {/* FLOATING ADD BUTTON - Only on Expenses View */}
+            {view === 'expenses' && (
+                <button 
+                    onClick={() => setShowAddModal(true)}
+                    className="fixed bottom-24 right-6 bg-slate-900 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-50 border-4 border-white"
+                >
+                    <Plus size={28} />
+                </button>
+            )}
 
             {/* BOTTOM NAV */}
             <nav className="fixed bottom-0 left-0 w-full bg-white/80 backdrop-blur-lg border-t border-slate-200 p-4 pb-6 flex justify-around items-center z-40">
-                <button onClick={() => setView('expenses')} className={`flex flex-col items-center gap-1 ${view === 'expenses' ? 'text-pink-500' : 'text-slate-400'}`}>
+                <button onClick={() => setView('expenses')} className={`flex flex-col items-center gap-1 transition-colors ${view === 'expenses' ? 'text-pink-500' : 'text-slate-400'}`}>
                     <Wallet size={24} />
                     <span className="text-[10px] font-bold">Wallet</span>
                 </button>
-                <button onClick={() => setView('notes')} className={`flex flex-col items-center gap-1 ${view === 'notes' ? 'text-pink-500' : 'text-slate-400'}`}>
+                <button onClick={() => setView('notes')} className={`flex flex-col items-center gap-1 transition-colors ${view === 'notes' ? 'text-pink-500' : 'text-slate-400'}`}>
                     <MessageCircle size={24} />
-                    <span className="text-[10px] font-bold">Love Notes</span>
+                    <span className="text-[10px] font-bold">Notes</span>
+                </button>
+                <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 transition-colors ${view === 'settings' ? 'text-pink-500' : 'text-slate-400'}`}>
+                    <Settings size={24} />
+                    <span className="text-[10px] font-bold">Settings</span>
                 </button>
             </nav>
 
