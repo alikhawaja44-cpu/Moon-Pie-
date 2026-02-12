@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
   Heart, ShoppingBag, Utensils, Zap, Car, Home, Film, Gift, 
-  Plus, Calendar, Trash2, Edit, MessageCircle, DollarSign, X, Check, Lock, LogIn, Upload
+  Plus, Calendar, Trash2, Edit, MessageCircle, DollarSign, X, Check, Lock, LogIn, Upload, Wallet
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ChartTooltip, Legend } from 'recharts';
 import confetti from "canvas-confetti";
