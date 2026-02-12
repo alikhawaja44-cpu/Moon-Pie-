@@ -114,6 +114,25 @@ function App() {
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [budgetCycleStart, setBudgetCycleStart] = useState(20); 
 
+    // --- DATE PARSER ---
+    const parseDate = (str) => {
+        if (!str) return new Date().toISOString().split('T')[0];
+        // Handle "MM/DD/YYYY" or "M/D/YYYY" explicitly
+        if (str.includes('/')) {
+            const parts = str.split('/');
+            if (parts.length === 3) {
+                // Assume MM/DD/YYYY based on user's file (01/30/2026)
+                const m = parseInt(parts[0], 10);
+                const d = parseInt(parts[1], 10);
+                const y = parseInt(parts[2], 10);
+                // Return YYYY-MM-DD
+                return `${y}-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
+            }
+        }
+        // Fallback for standard date strings
+        return new Date(str).toISOString().split('T')[0];
+    }; 
+
     // Selection State
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState(new Set());
@@ -247,7 +266,9 @@ function App() {
                     const debitStr = cleanRow['debit'] || '0';
                     const creditStr = cleanRow['credit'] || '0';
                     const comment = cleanRow['comment'] || 'Imported';
-                    const dateStr = cleanRow['date & time'] || new Date().toISOString().split('T')[0];
+                    const dateStr = cleanRow['date & time'] || '';
+                    const formattedDate = parseDate(dateStr); // Use robust parser
+                    
                     const debit = Number(debitStr.toString().replace(/,/g, ''));
                     const credit = Number(creditStr.toString().replace(/,/g, ''));
                     
@@ -275,7 +296,7 @@ function App() {
                         batch.set(newRef, {
                             amount: amount,
                             note: comment,
-                            date: new Date(dateStr).toISOString().split('T')[0],
+                            date: formattedDate,
                             category: cat,
                             who: 'Fajar',
                             type: type,
@@ -594,6 +615,21 @@ function App() {
 
                 {view === 'settings' && (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                        <div className="bg-white/80 backdrop-blur rounded-2xl p-6 shadow-sm border border-white">
+                            <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Calendar size={18}/> Cycle Settings</h2>
+                            <div className="flex items-center gap-4">
+                                <label className="text-sm font-bold text-slate-600">Salary Date:</label>
+                                <select 
+                                    className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none font-bold"
+                                    value={budgetCycleStart}
+                                    onChange={e => setBudgetCycleStart(Number(e.target.value))}
+                                >
+                                    {[1, 5, 10, 15, 20, 25, 28].map(d => <option key={d} value={d}>{d}th</option>)}
+                                </select>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-2">Current Cycle: {cycleText}</p>
+                        </div>
+
                         <div className="bg-white/80 backdrop-blur rounded-2xl p-6 shadow-sm border border-white">
                             <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Lock size={18}/> Security</h2>
                             <form onSubmit={handleChangePin} className="space-y-4">
