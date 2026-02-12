@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
   Heart, ShoppingBag, Utensils, Zap, Car, Home, Film, Gift, 
-  Plus, Calendar, Trash2, Edit, MessageCircle, DollarSign, X, Check, Lock, LogIn, Upload, Wallet, Settings, LogOut, TrendingDown
+  Plus, Calendar, Trash2, Edit, MessageCircle, DollarSign, X, Check, Lock, LogIn, Upload, Wallet, Settings, LogOut, TrendingDown, TrendingUp, Copy, ListChecks, CheckSquare
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ChartTooltip, Legend } from 'recharts';
 import confetti from "canvas-confetti";
@@ -124,13 +124,24 @@ function App() {
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
+    // Selection State
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState(new Set());
+
     // Data
     const expenses = useFirebaseSync('moonpie_expenses');
     const notes = useFirebaseSync('moonpie_notes');
     const settings = useFirebaseDoc('moonpie_settings', 'budget') || { monthlyBudget: 0 };
 
     // Form State
-    const [newExpense, setNewExpense] = useState({ amount: '', category: 'groceries', note: '', date: new Date().toISOString().split('T')[0], who: 'Ali' });
+    const [newExpense, setNewExpense] = useState({ 
+        amount: '', 
+        category: 'groceries', 
+        note: '', 
+        date: new Date().toISOString().split('T')[0], 
+        who: 'Ali',
+        type: 'debit' // 'debit' (expense) or 'credit' (income)
+    });
     const [newNote, setNewNote] = useState('');
     const [newPinCode, setNewPinCode] = useState('');
     const [newBudget, setNewBudget] = useState('');
@@ -147,13 +158,64 @@ function App() {
         });
         
         setShowAddModal(false);
-        setNewExpense({ amount: '', category: 'groceries', note: '', date: new Date().toISOString().split('T')[0], who: 'Ali' });
-        confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 }, colors: ['#ff6b6b', '#ff006e'] });
+        setNewExpense({ amount: '', category: 'groceries', note: '', date: new Date().toISOString().split('T')[0], who: 'Ali', type: 'debit' });
+        confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 }, colors: newExpense.type === 'credit' ? ['#4ade80', '#22c55e'] : ['#ff6b6b', '#ff006e'] });
+    };
+
+    const handleDuplicate = (item) => {
+        const { id, createdAt, ...dataToCopy } = item;
+        setNewExpense({
+            ...dataToCopy,
+            date: new Date().toISOString().split('T')[0] // Reset date to today
+        });
+        setShowAddModal(true);
     };
 
     const handleDeleteExpense = async (id) => {
         if (confirm("Remove this entry?")) {
             await deleteDoc(doc(db, 'moonpie_expenses', id));
+        }
+    };
+
+    // Bulk Actions
+    const toggleSelectionMode = () => {
+        setIsSelectionMode(!isSelectionMode);
+        setSelectedIds(new Set());
+    };
+
+    const toggleId = (id) => {
+        const newSet = new Set(selectedIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedIds(newSet);
+    };
+
+    const selectAll = () => {
+        if (selectedIds.size === filteredExpenses.length) {
+            setSelectedIds(new Set()); // Deselect all
+        } else {
+            const allIds = new Set(filteredExpenses.map(e => e.id));
+            setSelectedIds(allIds);
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (!confirm(`Delete ${selectedIds.size} items forever?`)) return;
+        
+        const batch = writeBatch(db);
+        selectedIds.forEach(id => {
+            const ref = doc(db, 'moonpie_expenses', id);
+            batch.delete(ref);
+        });
+
+        try {
+            await batch.commit();
+            alert("Deleted successfully!");
+            setIsSelectionMode(false);
+            setSelectedIds(new Set());
+        } catch (e) {
+            console.error(e);
+            alert("Error deleting items.");
         }
     };
 
@@ -185,11 +247,25 @@ function App() {
                     Object.keys(row).forEach(k => cleanRow[k.trim().toLowerCase()] = row[k]);
 
                     const debitStr = cleanRow['debit'] || '0';
+                    const creditStr = cleanRow['credit'] || '0';
                     const comment = cleanRow['comment'] || 'Imported';
                     const dateStr = cleanRow['date & time'] || new Date().toISOString().split('T')[0];
-                    const debit = Number(debitStr.toString().replace(/,/g, ''));
                     
+                    const debit = Number(debitStr.toString().replace(/,/g, ''));
+                    const credit = Number(creditStr.toString().replace(/,/g, ''));
+                    
+                    let amount = 0;
+                    let type = 'debit';
+
                     if (debit > 0) {
+                        amount = debit;
+                        type = 'debit';
+                    } else if (credit > 0) {
+                        amount = credit;
+                        type = 'credit';
+                    }
+
+                    if (amount > 0) {
                         let cat = 'other';
                         const lowerComment = comment.toLowerCase();
                         if (lowerComment.includes('lunch') || lowerComment.includes('dinner') || lowerComment.includes('coffee') || lowerComment.includes('bakery')) cat = 'dining';
@@ -200,11 +276,12 @@ function App() {
 
                         const newRef = doc(collection(db, 'moonpie_expenses'));
                         batch.set(newRef, {
-                            amount: debit,
+                            amount: amount,
                             note: comment,
                             date: new Date(dateStr).toISOString().split('T')[0],
                             category: cat,
                             who: 'Fajar',
+                            type: type,
                             createdAt: new Date().toISOString(),
                             imported: true
                         });
@@ -214,7 +291,7 @@ function App() {
 
                 try {
                     await batch.commit();
-                    alert(`Successfully imported ${count} expenses! 🎉`);
+                    alert(`Successfully imported ${count} entries! 🎉`);
                     confetti({ particleCount: 100, spread: 100, origin: { y: 0.6 } });
                 } catch (err) {
                     console.error("Import failed:", err);
@@ -261,13 +338,15 @@ function App() {
         });
     }, [expenses, selectedMonth, selectedYear]);
 
-    const totalSpent = useMemo(() => filteredExpenses.reduce((acc, curr) => acc + (curr.amount || 0), 0), [filteredExpenses]);
-    const remainingBalance = (settings.monthlyBudget || 0) - totalSpent;
-    const budgetPercent = settings.monthlyBudget > 0 ? Math.min((totalSpent / settings.monthlyBudget) * 100, 100) : 0;
+    const totalDebits = useMemo(() => filteredExpenses.filter(e => e.type !== 'credit').reduce((acc, curr) => acc + (curr.amount || 0), 0), [filteredExpenses]);
+    const totalCredits = useMemo(() => filteredExpenses.filter(e => e.type === 'credit').reduce((acc, curr) => acc + (curr.amount || 0), 0), [filteredExpenses]);
+    
+    const remainingBalance = ((settings.monthlyBudget || 0) + totalCredits) - totalDebits;
+    const budgetPercent = settings.monthlyBudget > 0 ? Math.min((totalDebits / (settings.monthlyBudget + totalCredits)) * 100, 100) : 0;
     
     const chartData = useMemo(() => {
         const map = {};
-        filteredExpenses.forEach(e => {
+        filteredExpenses.filter(e => e.type !== 'credit').forEach(e => {
             map[e.category] = (map[e.category] || 0) + e.amount;
         });
         return Object.keys(map).map(k => ({ name: CATEGORIES.find(c => c.id === k)?.label || k, value: map[k] }));
@@ -290,36 +369,66 @@ function App() {
                         </h1>
                         <p className="text-slate-500 text-sm">Our little world 🌍</p>
                     </div>
-                    {/* IMPORT BUTTON */}
-                    <label className="cursor-pointer bg-white p-2 rounded-full shadow-sm text-slate-400 hover:text-pink-500 transition-colors" title="Import Excel/CSV">
-                        <Upload size={20} />
-                        <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
-                    </label>
+                    {/* TOP ACTION BUTTONS */}
+                    <div className="flex gap-2">
+                        {view === 'expenses' && (
+                            <button 
+                                onClick={toggleSelectionMode}
+                                className={`p-2 rounded-full shadow-sm transition-colors ${isSelectionMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:text-pink-500'}`}
+                                title="Bulk Actions"
+                            >
+                                <ListChecks size={20} />
+                            </button>
+                        )}
+                        <label className="cursor-pointer bg-white p-2 rounded-full shadow-sm text-slate-400 hover:text-pink-500 transition-colors" title="Import Excel/CSV">
+                            <Upload size={20} />
+                            <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
+                        </label>
+                    </div>
                 </div>
 
-                {/* BUDGET CARD */}
-                <div className="bg-white/60 backdrop-blur rounded-2xl p-4 border border-white shadow-sm" onClick={() => setShowBudgetModal(true)}>
-                    <div className="flex justify-between items-end mb-2">
-                        <div>
-                            <p className="text-xs font-bold text-slate-400 uppercase">Remaining Balance</p>
-                            <h2 className={`text-3xl font-bold ${remainingBalance < 0 ? 'text-red-500' : 'text-slate-800'}`}>
-                                Rs {remainingBalance.toLocaleString()}
-                            </h2>
+                {/* BULK ACTION BAR */}
+                {isSelectionMode && (
+                    <div className="bg-slate-800 text-white rounded-xl p-4 mb-4 flex justify-between items-center shadow-lg animate-in fade-in slide-in-from-top-2">
+                        <div className="flex items-center gap-3">
+                            <button onClick={selectAll} className="flex items-center gap-2 text-sm font-bold hover:text-pink-300">
+                                <CheckSquare size={18} /> {selectedIds.size === filteredExpenses.length ? 'Deselect All' : 'Select All'}
+                            </button>
+                            <span className="text-slate-400 text-sm">|</span>
+                            <span className="text-sm font-bold">{selectedIds.size} Selected</span>
                         </div>
-                        <div className="text-right">
-                            <p className="text-xs font-bold text-slate-400 uppercase">Monthly Budget</p>
-                            <p className="text-sm font-bold text-slate-600">Rs {settings.monthlyBudget.toLocaleString()}</p>
+                        {selectedIds.size > 0 && (
+                            <button onClick={handleBulkDelete} className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
+                                <Trash2 size={14} /> Delete
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* BUDGET CARD (Hidden during selection for more space) */}
+                {!isSelectionMode && (
+                    <div className="bg-white/60 backdrop-blur rounded-2xl p-4 border border-white shadow-sm transition-all hover:scale-[1.02]" onClick={() => setShowBudgetModal(true)}>
+                        <div className="flex justify-between items-end mb-2">
+                            <div>
+                                <p className="text-xs font-bold text-slate-400 uppercase">Remaining Balance</p>
+                                <h2 className={`text-3xl font-bold ${remainingBalance < 0 ? 'text-red-500' : 'text-slate-800'}`}>
+                                    Rs {remainingBalance.toLocaleString()}
+                                </h2>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-xs font-bold text-slate-400 uppercase">Monthly Budget</p>
+                                <p className="text-sm font-bold text-slate-600">Rs {settings.monthlyBudget.toLocaleString()}</p>
+                            </div>
                         </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                            <div 
+                                className={`h-2.5 rounded-full transition-all duration-500 ${budgetPercent > 90 ? 'bg-red-500' : 'bg-green-500'}`} 
+                                style={{ width: `${budgetPercent}%` }}
+                            ></div>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1 text-right">{Math.round(budgetPercent)}% Used</p>
                     </div>
-                    {/* Progress Bar */}
-                    <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                        <div 
-                            className={`h-2.5 rounded-full transition-all duration-500 ${budgetPercent > 90 ? 'bg-red-500' : 'bg-green-500'}`} 
-                            style={{ width: `${budgetPercent}%` }}
-                        ></div>
-                    </div>
-                    <p className="text-[10px] text-slate-400 mt-1 text-right">{Math.round(budgetPercent)}% Used</p>
-                </div>
+                )}
             </header>
 
             {/* MAIN CONTENT AREA */}
@@ -328,71 +437,98 @@ function App() {
                 {view === 'expenses' && (
                     <>
                         {/* FILTER ROW */}
-                        <div className="flex gap-2 mb-2">
-                            <select 
-                                className="flex-1 bg-white/50 border border-white rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none"
-                                value={selectedMonth}
-                                onChange={e => setSelectedMonth(e.target.value)}
-                            >
-                                <option value="All">All Months</option>
-                                {['January','February','March','April','May','June','July','August','September','October','November','December'].map((m, i) => (
-                                    <option key={i} value={i}>{m}</option>
-                                ))}
-                            </select>
-                            <select 
-                                className="bg-white/50 border border-white rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none"
-                                value={selectedYear}
-                                onChange={e => setSelectedYear(Number(e.target.value))}
-                            >
-                                <option value="2024">2024</option>
-                                <option value="2025">2025</option>
-                                <option value="2026">2026</option>
-                            </select>
-                        </div>
-
-                        {/* SPENT CARD */}
-                        <div className="flex justify-between items-center bg-white/50 p-4 rounded-xl border border-white">
-                             <div className="flex items-center gap-3">
-                                <div className="bg-red-100 p-2 rounded-lg text-red-500"><TrendingDown size={20}/></div>
-                                <div>
-                                    <p className="text-xs text-slate-500 font-bold uppercase">Total Spent</p>
-                                    <p className="font-bold text-slate-800">Rs {totalSpent.toLocaleString()}</p>
-                                </div>
-                             </div>
-                        </div>
-
-                        {/* CHART CARD */}
-                        <div className="bg-white/70 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white">
-                            <h2 className="text-slate-700 font-bold mb-4 flex items-center gap-2"><PieChart size={18}/> Spending Breakdown</h2>
-                            <div className="h-48 w-full">
-                                {chartData.length > 0 ? (
-                                    <ResponsiveContainer>
-                                        <PieChart>
-                                            <Pie data={chartData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={5} dataKey="value">
-                                                {chartData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={CATEGORIES.find(c => c.label === entry.name)?.color || '#ccc'} />
-                                                ))}
-                                            </Pie>
-                                            <ChartTooltip formatter={(val) => `Rs ${val}`} />
-                                        </PieChart>
-                                    </ResponsiveContainer>
-                                ) : (
-                                    <div className="h-full flex items-center justify-center text-slate-400 text-sm">No expenses yet! add one below 👇</div>
-                                )}
+                        {!isSelectionMode && (
+                            <div className="flex gap-2 mb-2">
+                                <select 
+                                    className="flex-1 bg-white/50 border border-white rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none"
+                                    value={selectedMonth}
+                                    onChange={e => setSelectedMonth(e.target.value)}
+                                >
+                                    <option value="All">All Months</option>
+                                    {['January','February','March','April','May','June','July','August','September','October','November','December'].map((m, i) => (
+                                        <option key={i} value={i}>{m}</option>
+                                    ))}
+                                </select>
+                                <select 
+                                    className="bg-white/50 border border-white rounded-xl px-3 py-2 text-sm font-bold text-slate-700 outline-none"
+                                    value={selectedYear}
+                                    onChange={e => setSelectedYear(Number(e.target.value))}
+                                >
+                                    <option value="2024">2024</option>
+                                    <option value="2025">2025</option>
+                                    <option value="2026">2026</option>
+                                </select>
                             </div>
-                        </div>
+                        )}
+
+                        {/* SPENT CARD (Hidden during selection) */}
+                        {!isSelectionMode && (
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="flex items-center gap-3 bg-white/50 p-4 rounded-xl border border-white">
+                                    <div className="bg-red-100 p-2 rounded-lg text-red-500"><TrendingDown size={20}/></div>
+                                    <div>
+                                        <p className="text-xs text-slate-500 font-bold uppercase">Expense</p>
+                                        <p className="font-bold text-slate-800">Rs {totalDebits.toLocaleString()}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 bg-white/50 p-4 rounded-xl border border-white">
+                                    <div className="bg-green-100 p-2 rounded-lg text-green-500"><TrendingUp size={20}/></div>
+                                    <div>
+                                        <p className="text-xs text-slate-500 font-bold uppercase">Income</p>
+                                        <p className="font-bold text-slate-800">Rs {totalCredits.toLocaleString()}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* CHART CARD (Hidden during selection) */}
+                        {!isSelectionMode && (
+                            <div className="bg-white/70 backdrop-blur-lg rounded-3xl p-6 shadow-xl border border-white">
+                                <h2 className="text-slate-700 font-bold mb-4 flex items-center gap-2"><PieChart size={18}/> Spending Breakdown</h2>
+                                <div className="h-48 w-full">
+                                    {chartData.length > 0 ? (
+                                        <ResponsiveContainer>
+                                            <PieChart>
+                                                <Pie data={chartData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={5} dataKey="value">
+                                                    {chartData.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={CATEGORIES.find(c => c.label === entry.name)?.color || '#ccc'} />
+                                                    ))}
+                                                </Pie>
+                                                <ChartTooltip formatter={(val) => `Rs ${val}`} />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-slate-400 text-sm">No expenses yet! add one below 👇</div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* EXPENSE LIST */}
                         <div className="space-y-3 pb-20">
                             {filteredExpenses.map(expense => {
-                                const Cat = CATEGORIES.find(c => c.id === expense.category) || CATEGORIES[7];
+                                const isCredit = expense.type === 'credit';
+                                const Cat = isCredit ? { icon: DollarSign, color: '#22c55e', label: 'Income' } : (CATEGORIES.find(c => c.id === expense.category) || CATEGORIES[7]);
                                 const Icon = Cat.icon;
+                                const isSelected = selectedIds.has(expense.id);
+                                
                                 return (
-                                    <div key={expense.id} className="bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between group">
+                                    <div 
+                                        key={expense.id} 
+                                        onClick={() => isSelectionMode && toggleId(expense.id)}
+                                        className={`bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between group transition-all cursor-pointer ${isSelected ? 'ring-2 ring-pink-500 bg-pink-50' : ''}`}
+                                    >
                                         <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-md" style={{ backgroundColor: Cat.color }}>
-                                                <Icon size={20} />
-                                            </div>
+                                            {isSelectionMode ? (
+                                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-pink-500 border-pink-500' : 'border-slate-300'}`}>
+                                                    {isSelected && <Check size={14} className="text-white" />}
+                                                </div>
+                                            ) : (
+                                                <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-md" style={{ backgroundColor: Cat.color }}>
+                                                    <Icon size={20} />
+                                                </div>
+                                            )}
+                                            
                                             <div>
                                                 <h3 className="font-bold text-slate-800">{expense.note || Cat.label}</h3>
                                                 <p className="text-xs text-slate-500 flex items-center gap-1">
@@ -400,9 +536,22 @@ function App() {
                                                 </p>
                                             </div>
                                         </div>
-                                        <div className="text-right">
-                                            <span className="block font-bold text-slate-800">Rs {expense.amount.toLocaleString()}</span>
-                                            <button onClick={() => handleDeleteExpense(expense.id)} className="text-red-300 hover:text-red-500 transition-colors p-1"><Trash2 size={14} /></button>
+                                        <div className="text-right flex items-center gap-2">
+                                            <div>
+                                                <span className={`block font-bold ${isCredit ? 'text-green-600' : 'text-slate-800'}`}>
+                                                    {isCredit ? '+' : ''} Rs {expense.amount.toLocaleString()}
+                                                </span>
+                                            </div>
+                                            {!isSelectionMode && (
+                                                <div className="flex flex-col gap-1">
+                                                    <button onClick={(e) => { e.stopPropagation(); handleDuplicate(expense); }} className="text-slate-300 hover:text-blue-500 transition-colors p-1" title="Duplicate">
+                                                        <Copy size={14} />
+                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteExpense(expense.id); }} className="text-red-200 hover:text-red-500 transition-colors p-1" title="Delete">
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -490,8 +639,8 @@ function App() {
                 )}
             </main>
 
-            {/* FLOATING ADD BUTTON - Only on Expenses View */}
-            {view === 'expenses' && (
+            {/* FLOATING ADD BUTTON - Only on Expenses View & Not Selection Mode */}
+            {view === 'expenses' && !isSelectionMode && (
                 <button 
                     onClick={() => setShowAddModal(true)}
                     className="fixed bottom-24 right-6 bg-slate-900 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-50 border-4 border-white"
@@ -521,13 +670,33 @@ function App() {
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 animate-in fade-in slide-in-from-bottom-10">
                     <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold text-slate-800">Add New Expense</h3>
+                            <h3 className="text-xl font-bold text-slate-800">
+                                {newExpense.id ? 'Duplicate Entry' : 'Add New Entry'}
+                            </h3>
                             <button onClick={() => setShowAddModal(false)} className="bg-slate-100 p-2 rounded-full hover:bg-slate-200"><X size={20}/></button>
                         </div>
                         
                         <form onSubmit={handleAddExpense} className="space-y-4">
+                            {/* DEBIT / CREDIT TOGGLE */}
+                            <div className="flex bg-slate-100 p-1 rounded-xl">
+                                <button 
+                                    type="button"
+                                    onClick={() => setNewExpense({...newExpense, type: 'debit'})}
+                                    className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all ${newExpense.type === 'debit' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-500'}`}
+                                >
+                                    Expense (Debit)
+                                </button>
+                                <button 
+                                    type="button"
+                                    onClick={() => setNewExpense({...newExpense, type: 'credit'})}
+                                    className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all ${newExpense.type === 'credit' ? 'bg-green-500 text-white shadow-sm' : 'text-slate-500'}`}
+                                >
+                                    Income (Credit)
+                                </button>
+                            </div>
+
                             <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">How much?</label>
+                                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Amount</label>
                                 <div className="relative">
                                     <span className="absolute left-4 top-3.5 text-slate-400 font-bold">Rs</span>
                                     <input 
@@ -541,22 +710,25 @@ function App() {
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Category</label>
-                                <div className="grid grid-cols-4 gap-2">
-                                    {CATEGORIES.map(cat => (
-                                        <button 
-                                            key={cat.id} 
-                                            type="button"
-                                            onClick={() => setNewExpense({...newExpense, category: cat.id})}
-                                            className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${newExpense.category === cat.id ? 'bg-slate-800 text-white scale-105 shadow-lg' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
-                                        >
-                                            <cat.icon size={18} />
-                                            <span className="text-[9px] font-bold truncate w-full text-center">{cat.label}</span>
-                                        </button>
-                                    ))}
+                            {/* Only show categories if it's an expense */}
+                            {newExpense.type === 'debit' && (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Category</label>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {CATEGORIES.map(cat => (
+                                            <button 
+                                                key={cat.id} 
+                                                type="button"
+                                                onClick={() => setNewExpense({...newExpense, category: cat.id})}
+                                                className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${newExpense.category === cat.id ? 'bg-slate-800 text-white scale-105 shadow-lg' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+                                            >
+                                                <cat.icon size={18} />
+                                                <span className="text-[9px] font-bold truncate w-full text-center">{cat.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -569,7 +741,7 @@ function App() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Who Paid?</label>
+                                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Who?</label>
                                     <select 
                                         className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:border-pink-500"
                                         value={newExpense.who}
@@ -585,14 +757,14 @@ function App() {
                                 <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Note (Optional)</label>
                                 <input 
                                     className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:border-pink-500"
-                                    placeholder="e.g. Dinner at Monal"
+                                    placeholder={newExpense.type === 'debit' ? "e.g. Dinner at Monal" : "e.g. Salary, Refund"}
                                     value={newExpense.note}
                                     onChange={e => setNewExpense({...newExpense, note: e.target.value})}
                                 />
                             </div>
 
-                            <button type="submit" className="w-full bg-pink-500 text-white py-4 rounded-2xl font-bold text-lg hover:bg-pink-600 shadow-lg shadow-pink-200 transition-all active:scale-95 flex justify-center items-center gap-2">
-                                <Plus size={20} /> Add Expense
+                            <button type="submit" className={`w-full text-white py-4 rounded-2xl font-bold text-lg shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2 ${newExpense.type === 'credit' ? 'bg-green-500 hover:bg-green-600 shadow-green-200' : 'bg-pink-500 hover:bg-pink-600 shadow-pink-200'}`}>
+                                <Plus size={20} /> {newExpense.type === 'credit' ? 'Add Income' : 'Add Expense'}
                             </button>
                         </form>
                     </div>
