@@ -336,8 +336,17 @@ function App() {
                 return d.getFullYear() === selectedYear;
             }
 
-            const targetStart = new Date(selectedYear, selectedMonth, budgetCycleStart);
-            const targetEnd = new Date(selectedYear, Number(selectedMonth) + 1, budgetCycleStart);
+            // Salary Cycle Logic (Shifted: Feb Selection = Jan 20 to Feb 19)
+            // This ensures "February" shows the bulk of Feb (1st-19th)
+            const targetStart = new Date(selectedYear, selectedMonth - 1, budgetCycleStart);
+            const targetEnd = new Date(selectedYear, selectedMonth, budgetCycleStart);
+            
+            // Handle Year Wrap for January
+            if (selectedMonth === 0) {
+                targetStart.setFullYear(selectedYear - 1);
+                targetStart.setMonth(11); // Dec
+            }
+
             return d >= targetStart && d < targetEnd;
         });
     }, [expenses, selectedMonth, selectedYear, budgetCycleStart]);
@@ -375,8 +384,15 @@ function App() {
 
     const cycleText = useMemo(() => {
         if (selectedMonth === 'All') return `Year ${selectedYear}`;
-        const start = new Date(selectedYear, selectedMonth, budgetCycleStart);
-        const end = new Date(selectedYear, Number(selectedMonth) + 1, budgetCycleStart - 1);
+        
+        const start = new Date(selectedYear, selectedMonth - 1, budgetCycleStart);
+        const end = new Date(selectedYear, selectedMonth, budgetCycleStart - 1);
+
+        if (selectedMonth === 0) {
+            start.setFullYear(selectedYear - 1);
+            start.setMonth(11);
+        }
+
         return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
     }, [selectedMonth, selectedYear, budgetCycleStart]);
 
