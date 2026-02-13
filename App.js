@@ -80,30 +80,30 @@ const Login = ({ onLogin, storedPin }) => {
         if (pin === storedPin) { 
             onLogin();
         } else {
-            setError('Wrong PIN, Honey! Try again ❤️');
+            setError('Wrong PIN, Honey! Try again 💜');
             setPin('');
         }
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-pink-50 p-6">
+        <div className="min-h-screen flex items-center justify-center bg-purple-50 p-6">
             <div className="bg-white/80 backdrop-blur-md p-8 rounded-3xl shadow-xl w-full max-w-sm text-center border border-white">
-                <div className="w-20 h-20 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-                    <Heart size={40} className="text-pink-500 fill-pink-500" />
+                <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                    <Heart size={40} className="text-purple-500 fill-purple-500" />
                 </div>
-                <h1 className="text-3xl font-bold text-pink-600 mb-2 font-serif">Moon Pie ❤️</h1>
-                <p className="text-pink-400 mb-6">Enter our secret PIN to enter</p>
+                <h1 className="text-3xl font-bold text-purple-600 mb-2 font-serif">Moon Pie 💜</h1>
+                <p className="text-purple-400 mb-6">Enter our secret PIN to enter</p>
                 <form onSubmit={handleSubmit}>
                     <input 
                         type="password" 
                         maxLength="4"
-                        className="w-full text-center text-4xl tracking-[1em] font-bold text-pink-600 border-b-2 border-pink-200 outline-none focus:border-pink-500 bg-transparent mb-6 py-2"
+                        className="w-full text-center text-4xl tracking-[1em] font-bold text-purple-600 border-b-2 border-purple-200 outline-none focus:border-purple-500 bg-transparent mb-6 py-2"
                         value={pin}
                         onChange={(e) => setPin(e.target.value)}
                         placeholder="••••"
                     />
                     {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-                    <button type="submit" className="w-full bg-pink-500 text-white font-bold py-3 rounded-xl hover:bg-pink-600 transition-colors shadow-lg shadow-pink-200 flex items-center justify-center gap-2">
+                    <button type="submit" className="w-full bg-purple-500 text-white font-bold py-3 rounded-xl hover:bg-purple-600 transition-colors shadow-lg shadow-purple-200 flex items-center justify-center gap-2">
                         <LogIn size={20} /> Open Our World
                     </button>
                 </form>
@@ -116,17 +116,19 @@ const Login = ({ onLogin, storedPin }) => {
 function App() {
     // Auth & Settings
     const [isAuthenticated, setIsAuthenticated] = useStickyState(false, 'moonpie_auth');
-    const [appPin, setAppPin] = useStickyState('1430', 'moonpie_pin'); 
     
-    // Custom Names (Default: Ali & Fajar)
-    const [userNames, setUserNames] = useStickyState({ user1: 'Ali', user2: 'Fajar' }, 'moonpie_names');
+    // SYNCED SETTINGS (Names & PIN)
+    const firebaseSettings = useFirebaseDoc('moonpie_settings', 'config');
+    const userNames = firebaseSettings?.names || { user1: 'Ali', user2: 'Fajar' };
+    const appPin = firebaseSettings?.pin || '1430'; // Default PIN if not set online
+
     const [newNameInputs, setNewNameInputs] = useState({ user1: '', user2: '' });
 
     // View & Modals
     const [view, setView] = useState('expenses'); 
     const [showAddModal, setShowAddModal] = useState(false);
     const [showBudgetModal, setShowBudgetModal] = useState(false);
-    const [isEditing, setIsEditing] = useState(false); // Mode for Edit vs Add
+    const [isEditing, setIsEditing] = useState(false); 
 
     // Filter State
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -178,8 +180,8 @@ function App() {
         const expenseData = {
             ...newExpense,
             amount: Number(newExpense.amount),
-            // Ensure we store internal keys 'user1'/'user2' or fallback if legacy data exists
-            who: newExpense.who === userNames.user1 ? 'user1' : (newExpense.who === userNames.user2 ? 'user2' : newExpense.who)
+            // Map legacy names to generic keys if needed
+            who: newExpense.who === 'Ali' ? 'user1' : (newExpense.who === 'Fajar' ? 'user2' : newExpense.who)
         };
 
         if (isEditing && newExpense.id) {
@@ -190,7 +192,7 @@ function App() {
                 ...expenseData,
                 createdAt: new Date().toISOString()
             });
-            confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 }, colors: newExpense.type === 'credit' ? ['#4ade80', '#22c55e'] : ['#ff6b6b', '#ff006e'] });
+            confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 }, colors: newExpense.type === 'credit' ? ['#4ade80', '#22c55e'] : ['#a855f7', '#d8b4fe'] });
         }
         
         setShowAddModal(false);
@@ -356,7 +358,7 @@ function App() {
                             note: comment,
                             date: formattedDate,
                             category: cat,
-                            who: 'user2', // Default to User 2 (Fajar) for imports per original request
+                            who: 'user2', 
                             type: type,
                             createdAt: new Date().toISOString(),
                             imported: true
@@ -392,22 +394,32 @@ function App() {
         await deleteDoc(doc(db, 'moonpie_notes', id));
     };
 
-    const handleChangePin = (e) => {
+    const handleChangePin = async (e) => {
         e.preventDefault();
         if (newPinCode.length === 4) {
-            setAppPin(newPinCode);
+            // Save to Firebase
+            await setDoc(doc(db, 'moonpie_settings', 'config'), { 
+                names: userNames, // Keep existing names
+                pin: newPinCode 
+            }, { merge: true });
+            
             setIsAuthenticated(false); // Force re-login
-            alert("PIN Updated! Please login again.");
+            alert("PIN Updated for both devices! Please login again.");
         } else {
             alert("PIN must be 4 digits!");
         }
     };
 
-    const handleUpdateNames = (e) => {
+    const handleUpdateNames = async (e) => {
         e.preventDefault();
         if (newNameInputs.user1 && newNameInputs.user2) {
-            setUserNames(newNameInputs);
-            alert("Names Updated! ❤️");
+            // Save to Firebase (Config doc now holds both names and pin)
+            await setDoc(doc(db, 'moonpie_settings', 'config'), { 
+                names: newNameInputs,
+                pin: appPin // Keep existing pin
+            }, { merge: true });
+            
+            alert("Names Updated! 💜");
             setNewNameInputs({ user1: '', user2: '' });
         }
     };
@@ -437,17 +449,14 @@ function App() {
     }, [expenses, selectedMonth, selectedYear, budgetCycleStart]);
 
     const stats = useMemo(() => {
-        // Resolve names to user keys if legacy data exists
         const resolveUser = (who) => {
             if (who === 'Ali' || who === 'user1') return 'user1';
             if (who === 'Fajar' || who === 'user2') return 'user2';
-            return 'user1'; // Default fallback
+            return 'user1'; 
         };
 
         const user1Expenses = filteredExpenses.filter(e => resolveUser(e.who) === 'user1' && e.type === 'debit').reduce((acc, curr) => acc + curr.amount, 0);
         const user2Expenses = filteredExpenses.filter(e => resolveUser(e.who) === 'user2' && e.type === 'debit').reduce((acc, curr) => acc + curr.amount, 0);
-        
-        // Income Logic: Credit entries ADD to the user's remaining balance (effectively increasing budget)
         const user1Income = filteredExpenses.filter(e => resolveUser(e.who) === 'user1' && e.type === 'credit').reduce((acc, curr) => acc + curr.amount, 0);
         const user2Income = filteredExpenses.filter(e => resolveUser(e.who) === 'user2' && e.type === 'credit').reduce((acc, curr) => acc + curr.amount, 0);
 
@@ -503,27 +512,27 @@ function App() {
     if (!isAuthenticated) return <Login onLogin={() => setIsAuthenticated(true)} storedPin={appPin} />;
 
     return (
-        <div className="max-w-md mx-auto min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 pb-24 relative overflow-hidden">
-            {/* Background Decorations */}
-            <div className="absolute top-0 left-0 w-64 h-64 bg-pink-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
-            <div className="absolute top-0 right-0 w-64 h-64 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+        <div className="max-w-md mx-auto min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 pb-24 relative overflow-hidden">
+            {/* Background Decorations - Updated to Purple */}
+            <div className="absolute top-0 left-0 w-64 h-64 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
+            <div className="absolute top-0 right-0 w-64 h-64 bg-pink-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
 
             {/* HEADER */}
             <header className="p-6 relative z-10">
                 <div className="flex justify-between items-center mb-4">
                     <div>
                         <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2 font-serif">
-                            Moon Pie <Heart className="text-pink-500 fill-pink-500 animate-pulse" size={24} />
+                            Moon Pie <Heart className="text-purple-500 fill-purple-500 animate-pulse" size={24} />
                         </h1>
                         <p className="text-slate-500 text-sm">Our little world 🌍</p>
                     </div>
                     <div className="flex gap-2">
                         {view === 'expenses' && (
-                            <button onClick={toggleSelectionMode} className={`p-2 rounded-full shadow-sm transition-colors ${isSelectionMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:text-pink-500'}`}>
+                            <button onClick={toggleSelectionMode} className={`p-2 rounded-full shadow-sm transition-colors ${isSelectionMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 hover:text-purple-500'}`}>
                                 <ListChecks size={20} />
                             </button>
                         )}
-                        <label className="cursor-pointer bg-white p-2 rounded-full shadow-sm text-slate-400 hover:text-pink-500 transition-colors">
+                        <label className="cursor-pointer bg-white p-2 rounded-full shadow-sm text-slate-400 hover:text-purple-500 transition-colors">
                             <Upload size={20} />
                             <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
                         </label>
@@ -537,7 +546,7 @@ function App() {
                 {isSelectionMode && (
                     <div className="bg-slate-800 text-white rounded-xl p-4 mb-4 flex justify-between items-center shadow-lg animate-in fade-in slide-in-from-top-2">
                         <div className="flex items-center gap-3">
-                            <button onClick={selectAll} className="flex items-center gap-2 text-sm font-bold hover:text-pink-300">
+                            <button onClick={selectAll} className="flex items-center gap-2 text-sm font-bold hover:text-purple-300">
                                 <CheckSquare size={18} /> {selectedIds.size === filteredExpenses.length ? 'Deselect' : 'Select All'}
                             </button>
                             <span className="text-sm font-bold">{selectedIds.size} Selected</span>
@@ -571,7 +580,7 @@ function App() {
                         {/* USER 2 CARD */}
                         <div className="bg-white/60 backdrop-blur rounded-2xl p-3 border border-white shadow-sm transition-transform active:scale-95 cursor-pointer" onClick={() => { if (selectedMonth !== 'All') { setBudgetInputs({user1: budgetsData.user1, user2: budgetsData.user2}); setShowBudgetModal(true); } }}>
                             <div className="flex items-center gap-2 mb-1">
-                                <div className="w-6 h-6 rounded-full bg-pink-100 flex items-center justify-center text-pink-600"><User size={14}/></div>
+                                <div className="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center text-purple-600"><User size={14}/></div>
                                 <span className="font-bold text-slate-700 text-sm truncate">{userNames.user2}</span>
                             </div>
                             <p className="text-[10px] text-slate-400 uppercase font-bold">Remaining</p>
@@ -579,7 +588,7 @@ function App() {
                                 {remaining.user2.toLocaleString()}
                             </p>
                             <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2 overflow-hidden">
-                                <div className={`h-1.5 rounded-full ${remaining.user2 < 0 ? 'bg-red-500' : 'bg-pink-500'}`} style={{ width: `${Math.min((stats.user2Spent / (budgetsData.user2 + stats.user2Income || 1)) * 100, 100)}%` }}></div>
+                                <div className={`h-1.5 rounded-full ${remaining.user2 < 0 ? 'bg-red-500' : 'bg-purple-500'}`} style={{ width: `${Math.min((stats.user2Spent / (budgetsData.user2 + stats.user2Income || 1)) * 100, 100)}%` }}></div>
                             </div>
                         </div>
                     </div>
@@ -644,10 +653,10 @@ function App() {
                                 if (personName === 'user2' || personName === 'Fajar') personName = userNames.user2;
 
                                 return (
-                                    <div key={expense.id} onClick={() => isSelectionMode && toggleId(expense.id)} className={`bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between group transition-all cursor-pointer ${isSelected ? 'ring-2 ring-pink-500 bg-pink-50' : ''}`}>
+                                    <div key={expense.id} onClick={() => isSelectionMode && toggleId(expense.id)} className={`bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between group transition-all cursor-pointer ${isSelected ? 'ring-2 ring-purple-500 bg-purple-50' : ''}`}>
                                         <div className="flex items-center gap-4">
                                             {isSelectionMode ? (
-                                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-pink-500 border-pink-500' : 'border-slate-300'}`}>
+                                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-purple-500 border-purple-500' : 'border-slate-300'}`}>
                                                     {isSelected && <Check size={14} className="text-white" />}
                                                 </div>
                                             ) : (
@@ -689,7 +698,7 @@ function App() {
                         </div>
                         <div className="grid grid-cols-2 gap-3 pb-20">
                             {notes.map((note, idx) => (
-                                <div key={note.id} className={`p-4 rounded-2xl shadow-sm relative group ${idx % 2 === 0 ? 'bg-pink-100 text-pink-900' : 'bg-blue-100 text-blue-900'}`}>
+                                <div key={note.id} className={`p-4 rounded-2xl shadow-sm relative group ${idx % 2 === 0 ? 'bg-purple-100 text-purple-900' : 'bg-blue-100 text-blue-900'}`}>
                                     <p className="font-handwriting text-lg leading-tight mb-4">{note.text}</p>
                                     <button onClick={() => handleDeleteNote(note.id)} className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>
                                 </div>
@@ -709,8 +718,8 @@ function App() {
                                     <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 outline-none focus:border-blue-500" placeholder={userNames.user1} value={newNameInputs.user1} onChange={e => setNewNameInputs({...newNameInputs, user1: e.target.value})} />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-pink-500 uppercase mb-1">User 2 Name (Pink)</label>
-                                    <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 outline-none focus:border-pink-500" placeholder={userNames.user2} value={newNameInputs.user2} onChange={e => setNewNameInputs({...newNameInputs, user2: e.target.value})} />
+                                    <label className="block text-xs font-bold text-purple-500 uppercase mb-1">User 2 Name (Purple)</label>
+                                    <input className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 outline-none focus:border-purple-500" placeholder={userNames.user2} value={newNameInputs.user2} onChange={e => setNewNameInputs({...newNameInputs, user2: e.target.value})} />
                                 </div>
                                 <button type="submit" className="w-full bg-slate-800 text-white font-bold py-2 rounded-xl hover:bg-slate-900 transition-colors">Update Names</button>
                             </form>
@@ -737,8 +746,8 @@ function App() {
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Change PIN</label>
                                     <div className="flex gap-2">
-                                        <input type="password" maxLength="4" className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-center text-lg font-bold tracking-widest outline-none focus:border-pink-500" placeholder="••••" value={newPinCode} onChange={e => setNewPinCode(e.target.value)} />
-                                        <button type="submit" className="bg-pink-500 text-white px-4 rounded-xl font-bold hover:bg-pink-600 transition-colors">Update</button>
+                                        <input type="password" maxLength="4" className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-center text-lg font-bold tracking-widest outline-none focus:border-purple-500" placeholder="••••" value={newPinCode} onChange={e => setNewPinCode(e.target.value)} />
+                                        <button type="submit" className="bg-purple-500 text-white px-4 rounded-xl font-bold hover:bg-purple-600 transition-colors">Update</button>
                                     </div>
                                     <p className="text-xs text-slate-400 mt-2">Current PIN: <span className="font-mono bg-slate-100 px-1 rounded">{appPin}</span></p>
                                 </div>
@@ -756,9 +765,9 @@ function App() {
 
             {/* BOTTOM NAV */}
             <nav className="fixed bottom-0 left-0 w-full bg-white/80 backdrop-blur-lg border-t border-slate-200 p-4 pb-6 flex justify-around items-center z-40">
-                <button onClick={() => setView('expenses')} className={`flex flex-col items-center gap-1 transition-colors ${view === 'expenses' ? 'text-pink-500' : 'text-slate-400'}`}><Wallet size={24} /><span className="text-[10px] font-bold">Wallet</span></button>
-                <button onClick={() => setView('notes')} className={`flex flex-col items-center gap-1 transition-colors ${view === 'notes' ? 'text-pink-500' : 'text-slate-400'}`}><MessageCircle size={24} /><span className="text-[10px] font-bold">Notes</span></button>
-                <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 transition-colors ${view === 'settings' ? 'text-pink-500' : 'text-slate-400'}`}><Settings size={24} /><span className="text-[10px] font-bold">Settings</span></button>
+                <button onClick={() => setView('expenses')} className={`flex flex-col items-center gap-1 transition-colors ${view === 'expenses' ? 'text-purple-500' : 'text-slate-400'}`}><Wallet size={24} /><span className="text-[10px] font-bold">Wallet</span></button>
+                <button onClick={() => setView('notes')} className={`flex flex-col items-center gap-1 transition-colors ${view === 'notes' ? 'text-purple-500' : 'text-slate-400'}`}><MessageCircle size={24} /><span className="text-[10px] font-bold">Notes</span></button>
+                <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 transition-colors ${view === 'settings' ? 'text-purple-500' : 'text-slate-400'}`}><Settings size={24} /><span className="text-[10px] font-bold">Settings</span></button>
             </nav>
 
             {/* ADD/EDIT EXPENSE MODAL */}
@@ -778,7 +787,7 @@ function App() {
                                 <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Amount</label>
                                 <div className="relative">
                                     <span className="absolute left-4 top-3.5 text-slate-400 font-bold">Rs</span>
-                                    <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl py-3 pl-10 pr-4 font-bold text-lg outline-none focus:border-pink-500 transition-colors" placeholder="0" autoFocus value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: e.target.value})} />
+                                    <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl py-3 pl-10 pr-4 font-bold text-lg outline-none focus:border-purple-500 transition-colors" placeholder="0" autoFocus value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: e.target.value})} />
                                 </div>
                             </div>
                             {newExpense.type === 'debit' && (
@@ -796,20 +805,20 @@ function App() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Date</label>
-                                    <input type="date" className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:border-pink-500" value={newExpense.date} onChange={e => setNewExpense({...newExpense, date: e.target.value})} />
+                                    <input type="date" className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:border-purple-500" value={newExpense.date} onChange={e => setNewExpense({...newExpense, date: e.target.value})} />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Who?</label>
-                                    <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:border-pink-500" value={newExpense.who} onChange={e => setNewExpense({...newExpense, who: e.target.value})}>
+                                    <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:border-purple-500" value={newExpense.who} onChange={e => setNewExpense({...newExpense, who: e.target.value})}>
                                         <option value="user1">{userNames.user1}</option><option value="user2">{userNames.user2}</option>
                                     </select>
                                 </div>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Note (Optional)</label>
-                                <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:border-pink-500" placeholder={newExpense.type === 'debit' ? "e.g. Dinner at Monal" : "e.g. Salary, Refund"} value={newExpense.note} onChange={e => setNewExpense({...newExpense, note: e.target.value})} />
+                                <input className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-sm font-medium outline-none focus:border-purple-500" placeholder={newExpense.type === 'debit' ? "e.g. Dinner at Monal" : "e.g. Salary, Refund"} value={newExpense.note} onChange={e => setNewExpense({...newExpense, note: e.target.value})} />
                             </div>
-                            <button type="submit" className={`w-full text-white py-4 rounded-2xl font-bold text-lg shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2 ${newExpense.type === 'credit' ? 'bg-green-500 hover:bg-green-600 shadow-green-200' : 'bg-pink-500 hover:bg-pink-600 shadow-pink-200'}`}>
+                            <button type="submit" className={`w-full text-white py-4 rounded-2xl font-bold text-lg shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2 ${newExpense.type === 'credit' ? 'bg-green-500 hover:bg-green-600 shadow-green-200' : 'bg-purple-500 hover:bg-purple-600 shadow-purple-200'}`}>
                                 <Plus size={20} /> {isEditing ? 'Update Entry' : (newExpense.type === 'credit' ? 'Add Income' : 'Add Expense')}
                             </button>
                         </form>
@@ -828,8 +837,8 @@ function App() {
                                 <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl py-3 px-4 font-bold text-lg outline-none focus:border-blue-500" placeholder="0" value={budgetInputs.user1} onChange={e => setBudgetInputs({...budgetInputs, user1: e.target.value})} />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-pink-500 uppercase mb-1">{userNames.user2}'s Budget</label>
-                                <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl py-3 px-4 font-bold text-lg outline-none focus:border-pink-500" placeholder="0" value={budgetInputs.user2} onChange={e => setBudgetInputs({...budgetInputs, user2: e.target.value})} />
+                                <label className="block text-xs font-bold text-purple-500 uppercase mb-1">{userNames.user2}'s Budget</label>
+                                <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl py-3 px-4 font-bold text-lg outline-none focus:border-purple-500" placeholder="0" value={budgetInputs.user2} onChange={e => setBudgetInputs({...budgetInputs, user2: e.target.value})} />
                             </div>
                             <div className="flex gap-2 mt-4">
                                 <button type="button" onClick={() => setShowBudgetModal(false)} className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold">Cancel</button>
