@@ -111,6 +111,11 @@ const CSS = `
   @keyframes checkPop {
     0%{transform:scale(0)} 60%{transform:scale(1.2)} 100%{transform:scale(1)}
   }
+  @keyframes navBubblePop {
+    0%  { transform:translateX(-50%) scale(0.4) translateY(16px); opacity:0; }
+    60% { transform:translateX(-50%) scale(1.12) translateY(-2px); opacity:1; }
+    100%{ transform:translateX(-50%) scale(1)   translateY(0);    opacity:1; }
+  }
 
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'Quicksand',sans-serif;background:#faf5ff;-webkit-tap-highlight-color:transparent;overflow-x:hidden;}
@@ -402,6 +407,119 @@ function Login({ onLogin, storedPin, names }) {
           : <div style={{height:20}}/>}
       </div>
     </div>
+  );
+}
+
+// ─── MAGIC NAV ───────────────────────────────────────────────────────────────
+const NAV_TABS = [
+  { key:'expenses', Icon:Wallet,        label:'Wallet'   },
+  { key:'wishlist', Icon:ShoppingCart,  label:'Wishlist' },
+  { key:'notes',    Icon:MessageCircle, label:'Notes'    },
+  { key:'settings', Icon:Settings,      label:'Settings' },
+];
+
+function MagicNav({ view, setView, wishPending }) {
+  const [prevView, setPrevView] = useState(view);
+  const activeIdx  = NAV_TABS.findIndex(t => t.key === view);
+  const TAB_W      = 100 / NAV_TABS.length; // % width per tab
+
+  const handleTab = key => {
+    setPrevView(view);
+    setView(key);
+  };
+
+  return (
+    <nav style={{
+      position:'fixed', bottom:0, left:'50%', transform:'translateX(-50%)',
+      width:'100%', maxWidth:430, zIndex:40,
+      /* extra bottom space for safe-area on iPhones */
+      paddingBottom:'env(safe-area-inset-bottom)',
+    }}>
+      {/* SVG wave cutout — draws a smooth bump where the active icon floats */}
+      <div style={{ position:'relative', height:70 }}>
+        {/* Pill background */}
+        <div style={{
+          position:'absolute', inset:0,
+          background:'rgba(255,255,255,0.97)',
+          backdropFilter:'blur(20px)',
+          borderTop:'1px solid rgba(196,181,253,0.35)',
+          boxShadow:'0 -4px 24px rgba(124,58,237,0.1)',
+        }}/>
+
+        {/* Tab buttons */}
+        <div style={{
+          position:'relative', display:'flex',
+          justifyContent:'space-around', alignItems:'flex-end',
+          height:70, padding:'0 4px 10px',
+        }}>
+          {NAV_TABS.map(({ key, Icon, label }, idx) => {
+            const active = view === key;
+            return (
+              <button key={key} onClick={() => handleTab(key)}
+                style={{
+                  flex:1, display:'flex', flexDirection:'column',
+                  alignItems:'center', gap:2, border:'none', background:'none',
+                  cursor:'pointer', fontFamily:'inherit', padding:0,
+                  position:'relative',
+                  /* push inactive icons down a bit */
+                  paddingTop: active ? 28 : 8,
+                  transition:'padding-top 0.35s cubic-bezier(.34,1.3,.64,1)',
+                }}>
+
+                {/* Floating bubble — only for active */}
+                {active && (
+                  <div style={{
+                    position:'absolute',
+                    top:-26,
+                    left:'50%',
+                    transform:'translateX(-50%)',
+                    width:54, height:54,
+                    borderRadius:'50%',
+                    background:'linear-gradient(135deg,#7c3aed,#6d28d9)',
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    boxShadow:'0 6px 20px rgba(124,58,237,0.45), 0 0 0 5px rgba(255,255,255,0.97)',
+                    animation:'navBubblePop 0.38s cubic-bezier(.34,1.56,.64,1)',
+                    zIndex:2,
+                  }}>
+                    <Icon size={22} color="white"/>
+                  </div>
+                )}
+
+                {/* Icon for inactive tabs */}
+                {!active && (
+                  <Icon size={20} color="#c4b5fd" style={{ marginBottom:1 }}/>
+                )}
+
+                {/* Label */}
+                <span style={{
+                  fontSize:9, fontWeight:800,
+                  color: active ? '#7c3aed' : '#c4b5fd',
+                  letterSpacing: active ? 0.5 : 0,
+                  transition:'color 0.25s',
+                  marginTop: active ? 30 : 0,
+                }}>
+                  {label}
+                </span>
+
+                {/* Wishlist badge */}
+                {key==='wishlist' && wishPending > 0 && (
+                  <div style={{
+                    position:'absolute', top: active ? -30 : -4, right:'18%',
+                    width:16, height:16, borderRadius:'50%',
+                    background:'#ef4444', color:'white',
+                    fontSize:9, fontWeight:800,
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    boxShadow:'0 2px 6px rgba(239,68,68,0.4)',
+                    transition:'top 0.35s',
+                    zIndex:3,
+                  }}>{wishPending}</div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </nav>
   );
 }
 
@@ -710,7 +828,7 @@ function App() {
   return (
     <div style={{maxWidth:430,margin:'0 auto',minHeight:'100vh',
       background:'linear-gradient(160deg,#faf5ff 0%,#f3e8ff 55%,#faf5ff 100%)',
-      paddingBottom:100,position:'relative',fontFamily:"'Quicksand',sans-serif"}}>
+      paddingBottom:120,position:'relative',fontFamily:"'Quicksand',sans-serif"}}>
       <style>{CSS}</style>
       <Petals/>
       <ToastContainer toasts={toasts}/>
@@ -1364,7 +1482,7 @@ function App() {
       {view==='expenses' && !isSelectionMode && (
         <button className="fab"
           onClick={()=>{setIsEditing(false);setNewExpense(emptyExpense());setShowAddModal(true);}}
-          style={{position:'fixed',bottom:84,right:20,width:60,height:60,borderRadius:'50%',
+          style={{position:'fixed',bottom:88,right:20,width:60,height:60,borderRadius:'50%',
             background:'linear-gradient(135deg,#7c3aed,#6d28d9)',color:'white',
             border:'3px solid white',cursor:'pointer',
             display:'flex',alignItems:'center',justifyContent:'center',
@@ -1376,7 +1494,7 @@ function App() {
       {view==='wishlist' && (
         <button className="fab"
           onClick={()=>document.querySelector('#wish-name-input')?.focus()}
-          style={{position:'fixed',bottom:84,right:20,width:60,height:60,borderRadius:'50%',
+          style={{position:'fixed',bottom:88,right:20,width:60,height:60,borderRadius:'50%',
             background:'linear-gradient(135deg,#7c3aed,#6d28d9)',color:'white',
             border:'3px solid white',cursor:'pointer',
             display:'flex',alignItems:'center',justifyContent:'center',
@@ -1385,36 +1503,8 @@ function App() {
         </button>
       )}
 
-      {/* ══ BOTTOM NAV — 4 tabs ══ */}
-      <nav style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',
-        width:'100%',maxWidth:430,background:'rgba(255,255,255,0.94)',backdropFilter:'blur(20px)',
-        borderTop:'1px solid rgba(196,181,253,0.4)',
-        padding:'10px 0 22px',display:'flex',justifyContent:'space-around',alignItems:'center',zIndex:40}}>
-        {[
-          {key:'expenses', Icon:Wallet,       label:'Wallet'},
-          {key:'wishlist', Icon:ShoppingCart,  label:'Wishlist'},
-          {key:'notes',    Icon:MessageCircle, label:'Notes'},
-          {key:'settings', Icon:Settings,      label:'Settings'},
-        ].map(({key,Icon,label})=>(
-          <button key={key} onClick={()=>setView(key)} className="nav-btn"
-            style={{color:view===key?'#7c3aed':'#c4b5fd',position:'relative'}}>
-            <Icon size={21}/>
-            <span style={{fontSize:9}}>{label}</span>
-            {view===key&&(
-              <div style={{position:'absolute',bottom:-2,width:20,height:3,
-                background:'linear-gradient(90deg,#7c3aed,#a78bfa)',borderRadius:99}}/>
-            )}
-            {key==='wishlist'&&wishStats.pending>0&&(
-              <div style={{position:'absolute',top:-2,right:6,width:16,height:16,borderRadius:'50%',
-                background:'#7c3aed',color:'white',fontSize:9,fontWeight:800,
-                display:'flex',alignItems:'center',justifyContent:'center',
-                boxShadow:'0 2px 6px rgba(124,58,237,0.4)'}}>
-                {wishStats.pending}
-              </div>
-            )}
-          </button>
-        ))}
-      </nav>
+      {/* ══ MAGIC BOTTOM NAV ══ */}
+      <MagicNav view={view} setView={setView} wishPending={wishStats.pending}/>
 
       {/* ══ ADD / EDIT MODAL ══ */}
       {showAddModal&&(
